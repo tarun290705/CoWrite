@@ -3,8 +3,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.shortcuts import get_object_or_404
-from .models import Note
-from .serializers import NoteSerializer
+from .models import Note, Collaboration
+from .serializers import NoteSerializer, CollaborationSerializer
+from django.contrib.auth.models import User
 
 class NoteListCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -25,7 +26,13 @@ class NoteDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self, pk, user):
-        return get_object_or_404(Note, pk=pk, owner=user)
+        note = Note.objects.filter(pk=pk, owner=user).first()
+        if note:
+            return note
+        collaboration = Collaboration.objects.filter(note_id=pk, user=user).first()
+        if collaboration:
+            return collaboration.note
+        return get_object_or_404(Note, pk=-1)
     
     def get(self, request, pk):
         note = self.get_object(pk, request.user)
@@ -44,3 +51,23 @@ class NoteDetailView(APIView):
         note = self.get_object(pk, request.user)
         note.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+class ShareNoteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        note = get_object_or_404(Note, pk=pk, owner=request.user)
+        serializer = CollaborationSerializer(data=request.data, context={'note': note})
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"msg": "Note shared successfully"}, status=201)
+        return Response(serializer.errors, status=400)
+    
+class SharedNotesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        collaborations = Collaboration.objects.filter(user=request.user)
+        notes = [collab.note for collab in collaborations]
+        serializer = NoteSerializer(notes, many=True)
+        return Response(serializer.data)
