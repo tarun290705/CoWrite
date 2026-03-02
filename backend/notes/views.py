@@ -3,9 +3,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.shortcuts import get_object_or_404
-from .models import Note, Collaboration
+from .models import Note, Collaboration, NoteVersion
 from .serializers import NoteSerializer, CollaborationSerializer
 from django.contrib.auth.models import User
+from rest_framework.decorators import api_view, permission_classes
 
 class NoteListCreateView(APIView):
     permission_classes = [IsAuthenticated]
@@ -71,3 +72,28 @@ class SharedNotesView(APIView):
         notes = [collab.note for collab in collaborations]
         serializer = NoteSerializer(notes, many=True)
         return Response(serializer.data)
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def note_versions(request, note_id):
+    versions = NoteVersion.objects.filter(note_id=note_id).order_by('-created_at')
+
+    data = [
+        {
+            "id": v.id,
+            "created_at": v.created_at
+        }
+        for v in versions
+    ]
+    
+    return Response(data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def version_detail(request, version_id):
+    version = NoteVersion.objects.get(id=version_id)
+
+    return Response({
+        "content": version.content,
+        "created_at": version.created_at
+    })

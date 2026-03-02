@@ -8,35 +8,69 @@ from rest_framework_simplejwt.tokens import AccessToken
 
 class NoteConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        self.note_id = self.scope['url_route']['kwargs']['note_id']
-        self.group_name = f'note_{self.note_id}'
-        self.user = await self.get_user_from_token()
+        try:
+            print("WS connect start")
 
-        if not self.user:
+            self.note_id = self.scope['url_route']['kwargs']['note_id']
+            self.group_name = f'note_{self.note_id}'
+
+            self.user = await self.get_user_from_token()
+            print("User:", self.user)
+
+            if not self.user:
+                print("No user")
+                await self.close()
+                return
+
+            has_access = await self.user_has_access()
+            print("Has access:", has_access)
+
+            if not has_access:
+                print("Access denied")
+                await self.close()
+                return
+
+            self.role = await self.get_user_role()
+            print("Role:", self.role)
+
+            if not self.role:
+                print("No role")
+                await self.close()
+                return
+
+            note = await self.get_note()
+            print("Note:", note)
+
+            print("Adding to group...")
+            await self.channel_layer.group_add(self.group_name, self.channel_name)
+
+            print("Accepting connection")
+            await self.accept()
+
+            await self.send(text_data=json.dumps({
+                "content": note.content
+            }))
+
+        except Exception as e:
+            print("WS ERROR:", e)
             await self.close()
-            return
-        
-        has_access = await self.user_has_access()
-
-        if not has_access:
-            await self.close()
-            return
-
-        note = await self.get_note()
-        if not note:
-            await self.close()
-            return
-
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
-        await self.send(text_data=json.dumps({
-            "content": note.content
-        }))
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
+        if hasattr(self, "user"):
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    "type": "user_left",
+                    "username": self.user.username
+                }
+            )
+
     async def receive(self, text_data):
+        if self.role == "viewer":
+            return
+
         try:
             data = json.loads(text_data)
             content = data.get("content", "")
@@ -55,6 +89,18 @@ class NoteConsumer(AsyncWebsocketConsumer):
     async def note_update(self, event):
         await self.send(text_data=json.dumps({
             'content': event['content']
+        }))
+
+    async def user_joined(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "user_joined",
+            "username": event["username"]
+        }))
+
+    async def user_left(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "user_left",
+            "username": event["username"]
         }))
 
     @sync_to_async
@@ -81,6 +127,15 @@ class NoteConsumer(AsyncWebsocketConsumer):
             return True
         return Collaboration.objects.filter(note_id=self.note_id, user=self.user).exists()
 
+    @sync_to_async
+    def get_user_role(self):
+        if Note.objects.filter(id=self.note_id, owner=self.user).exists():
+            return "editor"
+        
+        collab = Collaboration.objects.filter(note_id=self.note_id, user=self.user).first()
+        if collab:
+            return collab.role
+        return None
 
     @sync_to_async
     def get_note(self):
@@ -91,4 +146,10 @@ class NoteConsumer(AsyncWebsocketConsumer):
         
     @sync_to_async
     def update_note(self, content):
-        Note.objects.filter(id=self.note_id).update(content=content)
+        note = Note.objects.get(id=self.note_id)
+
+        from .models import NoteVersion
+        NoteVersion.objects.create(note=note, content=note.content)
+
+        note.content = content
+        note.save()
