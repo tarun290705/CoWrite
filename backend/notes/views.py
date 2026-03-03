@@ -97,3 +97,14 @@ def version_detail(request, version_id):
         "content": version.content,
         "created_at": version.created_at
     })
+
+@api_view(['POST'])
+def save_version(request, note_id):
+    try:
+        note = Note.objects.get(id=note_id)
+    except Note.DoesNotExist:
+        return Response({"error": "Note not found"}, status=404)
+    
+    NoteVersion.objects.create(note=note, content=note.content)
+
+    return Response({"msg": "Version saved"})

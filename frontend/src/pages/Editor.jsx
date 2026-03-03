@@ -14,11 +14,7 @@ function Editor({ noteId }) {
 
   useEffect(() => {
     const token = localStorage.getItem("access");
-
-    if (!token) {
-        console.log("No token found");
-        return;
-    }
+    if (!token) return;
 
     const socket = new WebSocket(
       `ws://127.0.0.1:8000/ws/notes/${noteId}/?token=${token}`,
@@ -32,33 +28,39 @@ function Editor({ noteId }) {
 
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      //
-      console.log("WS message:", data);
 
-      if (!data.type && data.content !== undefined) {
-        setContent(data.content);
-        return;
-      }
+      switch (data.type) {
+        case "note_init":
+          setContent(data.content);
+          break;
 
-      if (data.type === "active_users") {
-        setActiveUsers(data.users);
-        return;
-      }
+        case "note_update":
+          setContent(data.content);
+          break;
 
-      if (data.type === "user_joined") {
-        setActiveUsers(prev => {
-          if (prev.includes(data.username)) return prev;
-          return [...prev, data.username];
-        });
-      }
+        case "active_users":
+          setActiveUsers(data.users);
+          break;
 
-      if (data.type === "user_left") {
-        setActiveUsers((prev) => prev.filter(user => user !== data.username));
+        case "user_joined":
+          setActiveUsers((prev) =>
+            prev.includes(data.username) ? prev : [...prev, data.username],
+          );
+          break;
+
+        case "user_left":
+          setActiveUsers((prev) =>
+            prev.filter((user) => user !== data.username),
+          );
+          break;
+
+        default:
+          console.log("Unknown WS message:", data);
       }
     };
 
     socket.onerror = (err) => {
-        console.error("WebSocket error:", err);
+      console.error("WebSocket error:", err);
     };
 
     socket.onclose = () => {
@@ -82,7 +84,7 @@ function Editor({ noteId }) {
     }
 
     debounceRef.current = setTimeout(() => {
-      if (socketRef.current?.readyState == WebSocket.OPEN) {
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
         socketRef.current.send(JSON.stringify({ content: value }));
       }
     }, 300);
@@ -120,8 +122,23 @@ function Editor({ noteId }) {
 
   const loadVersion = async (versionId) => {
     try {
-      const res = await API.get(`versions/${versionId}`);
-      setContent(res.data.content);
+      const res = await API.get(`versions/${versionId}/`);
+      const restoredContent = res.data.content;
+      setContent(restoredContent);
+
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ content: restoredContent }));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const saveVersion = async () => {
+    try {
+      await API.post(`notes/${noteId}/save-version/`);
+      alert("Version saved");
+      fetchVersions();
     } catch (err) {
       console.error(err);
     }
@@ -156,6 +173,8 @@ function Editor({ noteId }) {
         <option value="viewer">Viewer</option>
         <option value="editor">Editor</option>
       </select>
+
+      <button onClick={saveVersion}>Save Snapshot</button>
 
       <button onClick={handleShare}>Share</button>
       <hr />

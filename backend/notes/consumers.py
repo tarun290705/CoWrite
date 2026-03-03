@@ -7,6 +7,8 @@ from django.contrib.auth.models import AnonymousUser
 from rest_framework_simplejwt.tokens import AccessToken
 
 class NoteConsumer(AsyncWebsocketConsumer):
+    active_users = {}
+
     async def connect(self):
         try:
             print("WS connect start")
@@ -47,9 +49,23 @@ class NoteConsumer(AsyncWebsocketConsumer):
             print("Accepting connection")
             await self.accept()
 
+            if self.note_id not in NoteConsumer.active_users:
+                NoteConsumer.active_users[self.note_id] = set()
+
+            NoteConsumer.active_users[self.note_id].add(self.user.username)
+
             await self.send(text_data=json.dumps({
-                "content": note.content
+                "type": "active_users",
+                "users": list(NoteConsumer.active_users[self.note_id])
             }))
+
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    "type": "user_joined",
+                    "username": self.user.username
+                }
+            )
 
         except Exception as e:
             print("WS ERROR:", e)
@@ -58,7 +74,10 @@ class NoteConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
-        if hasattr(self, "user"):
+        if hasattr(self, "user") and self.user is not None:
+            if self.note_id in NoteConsumer.active_users:
+                NoteConsumer.active_users[self.note_id].discard(self.user.username)
+
             await self.channel_layer.group_send(
                 self.group_name,
                 {
@@ -70,11 +89,11 @@ class NoteConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data):
         if self.role == "viewer":
             return
-
-        try:
-            data = json.loads(text_data)
-            content = data.get("content", "")
-        except:
+        
+        data = json.loads(text_data)
+        content = data.get("content", "")
+        
+        if content is None:
             return
 
         await self.update_note(content)
@@ -88,7 +107,8 @@ class NoteConsumer(AsyncWebsocketConsumer):
 
     async def note_update(self, event):
         await self.send(text_data=json.dumps({
-            'content': event['content']
+            "type": "note_update",
+            "content": event['content']
         }))
 
     async def user_joined(self, event):
@@ -146,10 +166,4 @@ class NoteConsumer(AsyncWebsocketConsumer):
         
     @sync_to_async
     def update_note(self, content):
-        note = Note.objects.get(id=self.note_id)
-
-        from .models import NoteVersion
-        NoteVersion.objects.create(note=note, content=note.content)
-
-        note.content = content
-        note.save()
+        Note.objects.filter(id=self.note_id).update(content=content)
