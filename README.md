@@ -24,7 +24,7 @@ CoWrite is split into two independent services that run in parallel.
 - **Frontend**: React, Vite, ReactQuill, Axios, CSS Modules
 - **Backend**: Django, Django Channels, Django REST Framework, SimpleJWT, Daphne
 - **Real-time**: WebSockets, Redis (Docker)
-- **Database**: SQLite (development)
+- **Database**: PostgreSQL
 
 ## 🚀 Getting Started
 
