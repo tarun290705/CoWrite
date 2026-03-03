@@ -92,13 +92,13 @@ npm install
 
 # Start the development server
 npm run dev
-
+```
 Once both services are running, open `http://localhost:5173` in your browser.
 
 ## 📂 Project Structure
 
 ```
-cowrite/
+CoWrite/
 ├── backend/
 │   ├── backend/
 │   │   ├── __init__.py
