@@ -1,194 +1,289 @@
-import { useEffect, useRef, useState } from "react";
-import API from "../services/api";
-import ReactQuill from "react-quill-new";
-import "react-quill-new/dist/quill.snow.css";
+import { useEffect, useRef, useState, useCallback } from 'react';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
+
+import API from '../services/api';
+import TopBar from '../components/layout/TopBar';
+import Sidebar from '../components/layout/Sidebar';
+import ActiveUsersBar from '../components/editor/ActiveUsersBar';
+import TypingIndicator from '../components/editor/TypingIndicator';
+import VersionHistoryDrawer from '../components/editor/VersionHistoryDrawer';
+import SharePanel from '../components/editor/SharePanel';
+
+import styles from './Editor.module.css';
+
+const QUILL_MODULES = {
+  toolbar: [
+    [{ header: [1, 2, 3, false] }],
+    ['bold', 'italic', 'underline', 'strike'],
+    ['blockquote', 'code-block'],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    [{ indent: '-1' }, { indent: '+1' }],
+    ['link'],
+    ['clean'],
+  ],
+};
+
+const QUILL_FORMATS = [
+  'header', 'bold', 'italic', 'underline', 'strike',
+  'blockquote', 'code-block', 'list', 'indent', 'link',
+];
+
+const TYPING_CLEAR_DELAY = 1500;
+
+function decodeJWT(token) {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch {
+    return null;
+  }
+}
+
+function getCurrentUser() {
+  const token = localStorage.getItem('access');
+  if (token) {
+    const payload = decodeJWT(token);
+    if (payload) return payload.username || payload.user_id?.toString() || null;
+  }
+  return localStorage.getItem('username') || null;
+}
 
 function Editor({ noteId }) {
-  const [content, setContent] = useState("");
-  const socketRef = useRef(null);
-  const debounceRef = useRef(null);
-  const [shareUser, setShareUser] = useState("");
-  const [role, setRole] = useState("viewer");
+  const [content, setContent]         = useState('');
   const [activeUsers, setActiveUsers] = useState([]);
-  const [versions, setVersions] = useState([]);
+  const [typingUsers, setTypingUsers] = useState([]);
+  const [versions, setVersions]       = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [noteTitle, setNoteTitle]     = useState('');
+
+  const currentUser    = getCurrentUser();
+  const currentUserRef = useRef(currentUser);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
+  const socketRef         = useRef(null);
+  const debounceRef       = useRef(null);
+  const typingTimers      = useRef({});
+  const wsInitReceivedRef = useRef(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("access");
+    API.get(`notes/${noteId}/`)
+      .then((res) => {
+        setNoteTitle(res.data.title || res.data.name || `Note #${noteId}`);
+        if (!wsInitReceivedRef.current) {
+          setContent(res.data.content || '');
+        }
+      })
+      .catch(() => {
+        setNoteTitle(`Note #${noteId}`);
+      });
+  }, [noteId]);
+
+  const clearTyping = useCallback((username) => {
+    setTypingUsers((prev) => prev.filter((u) => u !== username));
+    if (typingTimers.current[username]) {
+      clearTimeout(typingTimers.current[username]);
+      delete typingTimers.current[username];
+    }
+  }, []);
+
+  const markTyping = useCallback((username) => {
+    if (!username || username === currentUserRef.current) return;
+    setTypingUsers((prev) =>
+      prev.includes(username) ? prev : [...prev, username]
+    );
+    if (typingTimers.current[username]) clearTimeout(typingTimers.current[username]);
+    typingTimers.current[username] = setTimeout(() => {
+      clearTyping(username);
+    }, TYPING_CLEAR_DELAY);
+  }, [clearTyping]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('access');
     if (!token) return;
 
     const socket = new WebSocket(
-      `ws://127.0.0.1:8000/ws/notes/${noteId}/?token=${token}`,
+      `ws://127.0.0.1:8000/ws/notes/${noteId}/?token=${token}`
     );
-
     socketRef.current = socket;
 
-    socket.onopen = () => {
-      console.log("WebSocket conneted");
-    };
+    socket.onopen = () => console.log('[CoWrite] WS connected');
 
     socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      let data;
+      try { data = JSON.parse(event.data); }
+      catch { return; }
 
       switch (data.type) {
-        case "note_init":
-          setContent(data.content);
+        case 'note_init':
+          wsInitReceivedRef.current = true;
+          setContent(data.content || '');
           break;
-
-        case "note_update":
-          setContent(data.content);
+        case 'note_update':
+          if (data.username && data.username !== currentUserRef.current) {
+            setContent(data.content || '');
+            markTyping(data.username);
+          } else if (!data.username) {
+            setContent(data.content || '');
+          }
           break;
-
-        case "active_users":
-          setActiveUsers(data.users);
+        case 'active_users':
+          setActiveUsers(Array.isArray(data.users) ? data.users : []);
           break;
-
-        case "user_joined":
-          setActiveUsers((prev) =>
-            prev.includes(data.username) ? prev : [...prev, data.username],
-          );
+        case 'user_joined':
+          if (data.username) {
+            setActiveUsers((prev) =>
+              prev.includes(data.username) ? prev : [...prev, data.username]
+            );
+          }
           break;
-
-        case "user_left":
-          setActiveUsers((prev) =>
-            prev.filter((user) => user !== data.username),
-          );
+        case 'user_left':
+          if (data.username) {
+            setActiveUsers((prev) => prev.filter((u) => u !== data.username));
+            clearTyping(data.username);
+          }
           break;
-
         default:
-          console.log("Unknown WS message:", data);
+          break;
       }
     };
 
     socket.onerror = (err) => {
-      console.error("WebSocket error:", err);
+      if (socket.readyState < 2) {
+        console.error('[CoWrite] WS error:', err);
+      }
     };
 
-    socket.onclose = () => {
-      console.log("WebSocket disconnected");
-    };
+    socket.onclose = () => console.log('[CoWrite] WS disconnected');
 
     return () => {
-      socket.close();
+      if (socket.readyState === WebSocket.OPEN ||
+          socket.readyState === WebSocket.CONNECTING) {
+        socket.close();
+      }
       socketRef.current = null;
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
+      wsInitReceivedRef.current = false;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      Object.values(typingTimers.current).forEach(clearTimeout);
+      typingTimers.current = {};
     };
-  }, [noteId]);
+  }, [noteId, markTyping, clearTyping]);
 
-  const handleChange = (value) => {
-    setContent(value);
-
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-
-    debounceRef.current = setTimeout(() => {
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ content: value }));
-      }
-    }, 300);
-  };
-
-  const handleShare = async () => {
-    if (!shareUser) return;
-
-    try {
-      await API.post(`notes/${noteId}/share/`, {
-        username: shareUser,
-        role: role,
-      });
-
-      alert("Note share successfully");
-      setShareUser("");
-    } catch (err) {
-      console.error(err);
-      alert("Failed to share");
-    }
-  };
-
-  const fetchVersions = async () => {
+  const fetchVersions = useCallback(async () => {
     try {
       const res = await API.get(`notes/${noteId}/versions/`);
-      setVersions(res.data);
+      setVersions(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      console.error(err);
+      console.error('[CoWrite] Versions fetch failed:', err);
     }
-  };
-
-  useEffect(() => {
-    fetchVersions();
   }, [noteId]);
 
-  const loadVersion = async (versionId) => {
-    try {
-      const res = await API.get(`versions/${versionId}/`);
-      const restoredContent = res.data.content;
-      setContent(restoredContent);
+  useEffect(() => { fetchVersions(); }, [fetchVersions]);
 
+  const handleChange = useCallback((value) => {
+    setContent(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
       if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ content: restoredContent }));
+        socketRef.current.send(
+          JSON.stringify({
+            content: value,
+            username: currentUserRef.current,
+          })
+        );
       }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+    }, 300);
+  }, []);
 
-  const saveVersion = async () => {
+  const handleSaveSnapshot = async () => {
     try {
       await API.post(`notes/${noteId}/save-version/`);
-      alert("Version saved");
       fetchVersions();
     } catch (err) {
-      console.error(err);
+      console.error('[CoWrite] Save snapshot failed:', err);
     }
   };
 
+  const handleLoadVersion = async (versionId) => {
+    try {
+      const res = await API.get(`versions/${versionId}/`);
+      const restored = res.data.content;
+      setContent(restored);
+      if (socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(
+          JSON.stringify({
+            content: restored,
+            username: currentUserRef.current,
+          })
+        );
+      }
+      setHistoryOpen(false);
+    } catch (err) {
+      console.error('[CoWrite] Load version failed:', err);
+    }
+  };
+
+  const handleShare = async (username, role) => {
+    await API.post(`notes/${noteId}/share/`, { username, role });
+  };
+
+  const otherTypingUsers = typingUsers.filter(
+    (u) => u !== currentUserRef.current
+  );
+
+  const wordCount = content
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>CoWrite Editor</h2>
-      <h3>Active Users</h3>
-      <ul>
-        {activeUsers.map((user) => (
-          <li key={user}>{user}</li>
-        ))}
-      </ul>
-      <ReactQuill
-        theme="snow"
-        value={content}
-        onChange={handleChange}
-        style={{ height: "400px", marginBottom: "50px" }}
-      />
-      <hr />
-
-      <h3>Share Note</h3>
-
-      <input
-        placeholder="Username"
-        value={shareUser}
-        onChange={(e) => setShareUser(e.target.value)}
+    <div className={styles.appShell}>
+      <TopBar
+        noteTitle={noteTitle}
+        currentUser={currentUser}
+        onSaveSnapshot={handleSaveSnapshot}
+        onToggleHistory={() => setHistoryOpen((o) => !o)}
       />
 
-      <select value={role} onChange={(e) => setRole(e.target.value)}>
-        <option value="viewer">Viewer</option>
-        <option value="editor">Editor</option>
-      </select>
+      <Sidebar activeNoteId={noteId} />
 
-      <button onClick={saveVersion}>Save Snapshot</button>
+      <main className={styles.mainArea}>
+        <ActiveUsersBar
+          activeUsers={activeUsers}
+          typingUsers={otherTypingUsers}
+          currentUser={currentUser}
+        />
 
-      <button onClick={handleShare}>Share</button>
-      <hr />
-      <h3>Version History</h3>
+        <div className={styles.editorWrapper}>
+          <ReactQuill
+            theme="snow"
+            value={content}
+            onChange={handleChange}
+            modules={QUILL_MODULES}
+            formats={QUILL_FORMATS}
+            className={styles.quill}
+          />
 
-      <div style={{ maxHeight: "200px", overflowY: "auto" }}>
-        {versions.map((v) => (
-          <div key={v.id}>
-            <button onClick={() => loadVersion(v.id)}>
-              {new Date(v.created_at).toLocaleString()}
-            </button>
+          <div className={styles.statusBar}>
+            <div className={styles.typingArea}>
+              <TypingIndicator typingUsers={otherTypingUsers} />
+            </div>
+            <span className={styles.wordCount}>
+              {wordCount} {wordCount === 1 ? 'word' : 'words'}
+            </span>
           </div>
-        ))}
-      </div>
+        </div>
+
+        <SharePanel noteId={noteId} onShare={handleShare} />
+      </main>
+
+      <VersionHistoryDrawer
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        versions={versions}
+        onLoadVersion={handleLoadVersion}
+      />
     </div>
   );
 }
