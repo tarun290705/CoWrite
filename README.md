@@ -24,7 +24,7 @@ CoWrite is split into two independent services that run in parallel.
 - **Frontend**: React, Vite, ReactQuill, Axios, CSS Modules
 - **Backend**: Django, Django Channels, Django REST Framework, SimpleJWT, Daphne
 - **Real-time**: WebSockets, Redis (Docker)
-- **Database**: SQLite (development)
+- **Database**: PostgreSQL
 
 ## 🚀 Getting Started
 
@@ -92,13 +92,13 @@ npm install
 
 # Start the development server
 npm run dev
-
+```
 Once both services are running, open `http://localhost:5173` in your browser.
 
 ## 📂 Project Structure
 
 ```
-cowrite/
+CoWrite/
 ├── backend/
 │   ├── backend/
 │   │   ├── __init__.py
