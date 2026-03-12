@@ -1,68 +1,78 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
+import { useEffect, useRef, useState, useCallback } from "react";
+import ReactQuill from "react-quill-new";
+import "react-quill-new/dist/quill.snow.css";
 
-import API from '../services/api';
-import TopBar from '../components/layout/TopBar';
-import Sidebar from '../components/layout/Sidebar';
-import ActiveUsersBar from '../components/editor/ActiveUsersBar';
-import TypingIndicator from '../components/editor/TypingIndicator';
-import VersionHistoryDrawer from '../components/editor/VersionHistoryDrawer';
-import SharePanel from '../components/editor/SharePanel';
+import API from "../services/api";
+import TopBar from "../components/layout/TopBar";
+import Sidebar from "../components/layout/Sidebar";
+import ActiveUsersBar from "../components/editor/ActiveUsersBar";
+import TypingIndicator from "../components/editor/TypingIndicator";
+import VersionHistoryDrawer from "../components/editor/VersionHistoryDrawer";
+import SharePanel from "../components/editor/SharePanel";
 
-import styles from './Editor.module.css';
+import styles from "./Editor.module.css";
 
 const QUILL_MODULES = {
   toolbar: [
     [{ header: [1, 2, 3, false] }],
-    ['bold', 'italic', 'underline', 'strike'],
-    ['blockquote', 'code-block'],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    [{ indent: '-1' }, { indent: '+1' }],
-    ['link'],
-    ['clean'],
+    ["bold", "italic", "underline", "strike"],
+    ["blockquote", "code-block"],
+    [{ list: "ordered" }, { list: "bullet" }],
+    [{ indent: "-1" }, { indent: "+1" }],
+    ["link"],
+    ["clean"],
   ],
 };
 
 const QUILL_FORMATS = [
-  'header', 'bold', 'italic', 'underline', 'strike',
-  'blockquote', 'code-block', 'list', 'indent', 'link',
+  "header",
+  "bold",
+  "italic",
+  "underline",
+  "strike",
+  "blockquote",
+  "code-block",
+  "list",
+  "indent",
+  "link",
 ];
 
 const TYPING_CLEAR_DELAY = 1500;
 
 function decodeJWT(token) {
   try {
-    return JSON.parse(atob(token.split('.')[1]));
+    return JSON.parse(atob(token.split(".")[1]));
   } catch {
     return null;
   }
 }
 
 function getCurrentUser() {
-  const token = localStorage.getItem('access');
+  const token = localStorage.getItem("access");
   if (token) {
     const payload = decodeJWT(token);
     if (payload) return payload.username || payload.user_id?.toString() || null;
   }
-  return localStorage.getItem('username') || null;
+  return localStorage.getItem("username") || null;
 }
 
 function Editor({ noteId }) {
-  const [content, setContent]         = useState('');
+  const [content, setContent] = useState("");
   const [activeUsers, setActiveUsers] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
-  const [versions, setVersions]       = useState([]);
+  const [versions, setVersions] = useState([]);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [noteTitle, setNoteTitle]     = useState('');
+  const [noteTitle, setNoteTitle] = useState("");
 
-  const currentUser    = getCurrentUser();
+  const currentUser = getCurrentUser();
   const currentUserRef = useRef(currentUser);
-  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
-  const socketRef         = useRef(null);
-  const debounceRef       = useRef(null);
-  const typingTimers      = useRef({});
+  const socketRef = useRef(null);
+  const debounceRef = useRef(null);
+  const typingTimers = useRef({});
   const wsInitReceivedRef = useRef(false);
 
   useEffect(() => {
@@ -70,7 +80,7 @@ function Editor({ noteId }) {
       .then((res) => {
         setNoteTitle(res.data.title || res.data.name || `Note #${noteId}`);
         if (!wsInitReceivedRef.current) {
-          setContent(res.data.content || '');
+          setContent(res.data.content || "");
         }
       })
       .catch(() => {
@@ -86,57 +96,66 @@ function Editor({ noteId }) {
     }
   }, []);
 
-  const markTyping = useCallback((username) => {
-    if (!username || username === currentUserRef.current) return;
-    setTypingUsers((prev) =>
-      prev.includes(username) ? prev : [...prev, username]
-    );
-    if (typingTimers.current[username]) clearTimeout(typingTimers.current[username]);
-    typingTimers.current[username] = setTimeout(() => {
-      clearTyping(username);
-    }, TYPING_CLEAR_DELAY);
-  }, [clearTyping]);
+  const markTyping = useCallback(
+    (username) => {
+      if (!username || username === currentUserRef.current) return;
+      setTypingUsers((prev) =>
+        prev.includes(username) ? prev : [...prev, username],
+      );
+      if (typingTimers.current[username])
+        clearTimeout(typingTimers.current[username]);
+      typingTimers.current[username] = setTimeout(() => {
+        clearTyping(username);
+      }, TYPING_CLEAR_DELAY);
+    },
+    [clearTyping],
+  );
 
   useEffect(() => {
-    const token = localStorage.getItem('access');
+    const token = localStorage.getItem("access");
     if (!token) return;
 
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+
     const socket = new WebSocket(
-      `ws://127.0.0.1:8000/ws/notes/${noteId}/?token=${token}`
+      `${protocol}://${window.location.host}/ws/notes/${noteId}/?token=${token}`,
     );
     socketRef.current = socket;
 
-    socket.onopen = () => console.log('[CoWrite] WS connected');
+    socket.onopen = () => console.log("[CoWrite] WS connected");
 
     socket.onmessage = (event) => {
       let data;
-      try { data = JSON.parse(event.data); }
-      catch { return; }
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
 
       switch (data.type) {
-        case 'note_init':
+        case "note_init":
           wsInitReceivedRef.current = true;
-          setContent(data.content || '');
+          setContent(data.content || "");
           break;
-        case 'note_update':
+        case "note_update":
           if (data.username && data.username !== currentUserRef.current) {
-            setContent(data.content || '');
+            setContent(data.content || "");
             markTyping(data.username);
           } else if (!data.username) {
-            setContent(data.content || '');
+            setContent(data.content || "");
           }
           break;
-        case 'active_users':
+        case "active_users":
           setActiveUsers(Array.isArray(data.users) ? data.users : []);
           break;
-        case 'user_joined':
+        case "user_joined":
           if (data.username) {
             setActiveUsers((prev) =>
-              prev.includes(data.username) ? prev : [...prev, data.username]
+              prev.includes(data.username) ? prev : [...prev, data.username],
             );
           }
           break;
-        case 'user_left':
+        case "user_left":
           if (data.username) {
             setActiveUsers((prev) => prev.filter((u) => u !== data.username));
             clearTyping(data.username);
@@ -149,15 +168,17 @@ function Editor({ noteId }) {
 
     socket.onerror = (err) => {
       if (socket.readyState < 2) {
-        console.error('[CoWrite] WS error:', err);
+        console.error("[CoWrite] WS error:", err);
       }
     };
 
-    socket.onclose = () => console.log('[CoWrite] WS disconnected');
+    socket.onclose = () => console.log("[CoWrite] WS disconnected");
 
     return () => {
-      if (socket.readyState === WebSocket.OPEN ||
-          socket.readyState === WebSocket.CONNECTING) {
+      if (
+        socket.readyState === WebSocket.OPEN ||
+        socket.readyState === WebSocket.CONNECTING
+      ) {
         socket.close();
       }
       socketRef.current = null;
@@ -173,11 +194,13 @@ function Editor({ noteId }) {
       const res = await API.get(`notes/${noteId}/versions/`);
       setVersions(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      console.error('[CoWrite] Versions fetch failed:', err);
+      console.error("[CoWrite] Versions fetch failed:", err);
     }
   }, [noteId]);
 
-  useEffect(() => { fetchVersions(); }, [fetchVersions]);
+  useEffect(() => {
+    fetchVersions();
+  }, [fetchVersions]);
 
   const handleChange = useCallback((value) => {
     setContent(value);
@@ -188,7 +211,7 @@ function Editor({ noteId }) {
           JSON.stringify({
             content: value,
             username: currentUserRef.current,
-          })
+          }),
         );
       }
     }, 300);
@@ -199,7 +222,7 @@ function Editor({ noteId }) {
       await API.post(`notes/${noteId}/save-version/`);
       fetchVersions();
     } catch (err) {
-      console.error('[CoWrite] Save snapshot failed:', err);
+      console.error("[CoWrite] Save snapshot failed:", err);
     }
   };
 
@@ -213,12 +236,12 @@ function Editor({ noteId }) {
           JSON.stringify({
             content: restored,
             username: currentUserRef.current,
-          })
+          }),
         );
       }
       setHistoryOpen(false);
     } catch (err) {
-      console.error('[CoWrite] Load version failed:', err);
+      console.error("[CoWrite] Load version failed:", err);
     }
   };
 
@@ -227,12 +250,12 @@ function Editor({ noteId }) {
   };
 
   const otherTypingUsers = typingUsers.filter(
-    (u) => u !== currentUserRef.current
+    (u) => u !== currentUserRef.current,
   );
 
   const wordCount = content
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
     .trim()
     .split(/\s+/)
     .filter(Boolean).length;
@@ -270,7 +293,7 @@ function Editor({ noteId }) {
               <TypingIndicator typingUsers={otherTypingUsers} />
             </div>
             <span className={styles.wordCount}>
-              {wordCount} {wordCount === 1 ? 'word' : 'words'}
+              {wordCount} {wordCount === 1 ? "word" : "words"}
             </span>
           </div>
         </div>
