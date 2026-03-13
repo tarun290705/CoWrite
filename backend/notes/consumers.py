@@ -114,6 +114,8 @@ class NoteConsumer(AsyncWebsocketConsumer):
         }))
 
     async def note_update(self, event):
+        if event['sender_username'] == self.user.username:
+            return
         await self.send(text_data=json.dumps({
             "type": "note_update",
             "content": event['content'],

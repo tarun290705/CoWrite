@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useReducer } from "react";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 
@@ -74,6 +74,8 @@ function Editor({ noteId }) {
   const debounceRef = useRef(null);
   const typingTimers = useRef({});
   const wsInitReceivedRef = useRef(false);
+  const isLocalEditRef = useRef(false);
+  const quillRef = useRef(false);
 
   useEffect(() => {
     API.get(`notes/${noteId}/`)
@@ -138,12 +140,10 @@ function Editor({ noteId }) {
           setContent(data.content || "");
           break;
         case "note_update":
-          if (data.username && data.username !== currentUserRef.current) {
-            setContent(data.content || "");
-            markTyping(data.username);
-          } else if (!data.username) {
-            setContent(data.content || "");
-          }
+          if (data.username === currentUserRef.current) return;
+          if(isLocalEditRef.current) return;
+          setContent(data.content || "");
+          markTyping(data.username);
           break;
         case "active_users":
           setActiveUsers(Array.isArray(data.users) ? data.users : []);
@@ -203,6 +203,7 @@ function Editor({ noteId }) {
   }, [fetchVersions]);
 
   const handleChange = useCallback((value) => {
+    isLocalEditRef.current = true;
     setContent(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -214,6 +215,10 @@ function Editor({ noteId }) {
           }),
         );
       }
+
+      setTimeout (() => {
+        isLocalEditRef.current = false;
+      }, 50);
     }, 300);
   }, []);
 
@@ -280,6 +285,7 @@ function Editor({ noteId }) {
 
         <div className={styles.editorWrapper}>
           <ReactQuill
+            ref={quillRef}
             theme="snow"
             value={content}
             onChange={handleChange}
