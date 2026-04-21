@@ -120,7 +120,7 @@ function Editor({ noteId }) {
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 
     const socket = new WebSocket(
-      `${protocol}://cowrite.up.railway.app/ws/notes/${noteId}/?token=${token}`,
+      `ws://127.0.0.1:8000/ws/notes/${noteId}/?token=${token}`,
     );
     socketRef.current = socket;
 
