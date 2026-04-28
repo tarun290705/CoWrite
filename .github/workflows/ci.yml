@@ -19,7 +19,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready"
+          --health-cmd="pg_isready -U postgres"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -30,19 +30,41 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.10
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
           cd backend
           pip install -r requirements.txt
 
+      # ⏳ Ensure DB is ready (extra safety)
+      - name: Wait for Postgres
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          until pg_isready -h postgres -U postgres; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
+
       - name: Run migrations
+        env:
+          DB_NAME: cowrite
+          DB_USER: postgres
+          DB_PASSWORD: 1234
+          DB_HOST: postgres
+          DB_PORT: 5432
         run: |
           cd backend
           python manage.py migrate
 
       - name: Run tests
+        env:
+          DB_NAME: cowrite
+          DB_USER: postgres
+          DB_PASSWORD: 1234
+          DB_HOST: postgres
+          DB_PORT: 5432
         run: |
           cd backend
           python manage.py test
