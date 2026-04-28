@@ -31,13 +31,18 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.12"   # 🔥 IMPORTANT FIX
+          python-version: "3.12"
 
       - name: Install dependencies
         run: |
           cd backend
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Verify installed packages   # 🔥 DEBUG STEP
+        run: |
+          cd backend
+          pip list
 
       - name: Wait for PostgreSQL
         run: |
