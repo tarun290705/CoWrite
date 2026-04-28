@@ -19,7 +19,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U postgres"
+          --health-cmd="pg_isready -U postgres -d cowrite"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -31,9 +31,9 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"   # ✅ FIXED
+          python-version: "3.11"
 
-      # 🔥 DEBUG STEP (MANDATORY)
+      # Debug (optional but useful)
       - name: DEBUG - show requirements file
         run: |
           cd backend
@@ -46,11 +46,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt
 
+      # ✅ FIXED WAIT STEP (robust)
       - name: Wait for PostgreSQL
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-          until pg_isready -h postgres -U postgres; do
+
+          for i in {1..30}; do
+            pg_isready -h postgres -p 5432 -U postgres -d cowrite && break
             echo "Waiting for postgres..."
             sleep 2
           done
@@ -60,7 +63,7 @@ jobs:
           DB_NAME: cowrite
           DB_USER: postgres
           DB_PASSWORD: 1234
-          DB_HOST: postgres
+          DB_HOST: postgres   # ✅ IMPORTANT
           DB_PORT: 5432
         run: |
           cd backend
@@ -71,7 +74,7 @@ jobs:
           DB_NAME: cowrite
           DB_USER: postgres
           DB_PASSWORD: 1234
-          DB_HOST: postgres
+          DB_HOST: postgres   # ✅ IMPORTANT
           DB_PORT: 5432
         run: |
           cd backend
