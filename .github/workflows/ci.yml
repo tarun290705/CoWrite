@@ -30,14 +30,14 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.12"   # ✅ FIXED (was 3.10)
 
       - name: Install dependencies
         run: |
           cd backend
+          pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ⏳ Ensure DB is ready (extra safety)
       - name: Wait for Postgres
         run: |
           sudo apt-get update
