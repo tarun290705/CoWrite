@@ -31,18 +31,20 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.12"
+          python-version: "3.11"   # ✅ FIXED
+
+      # 🔥 DEBUG STEP (MANDATORY)
+      - name: DEBUG - show requirements file
+        run: |
+          cd backend
+          echo "===== REQUIREMENTS FILE ====="
+          cat requirements.txt
 
       - name: Install dependencies
         run: |
           cd backend
           python -m pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt
-
-      - name: Verify installed packages   # 🔥 DEBUG STEP
-        run: |
-          cd backend
-          pip list
 
       - name: Wait for PostgreSQL
         run: |
