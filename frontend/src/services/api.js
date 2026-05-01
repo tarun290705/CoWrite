@@ -1,7 +1,9 @@
 import axios from "axios";
+import dotenv from "dotenv";
 
 const API = axios.create({
-  baseURL: "http://127.0.0.1:8000/api/",
+  // baseURL: import.meta.env.VITE_BACKEND_URI || "http://127.0.0.1:8000/api/",
+  baseURL:`${import.meta.env.VITE_BACKEND_URI}/api/`
 });
 
 const PUBLIC_ROUTES = ["register/", "login/"];

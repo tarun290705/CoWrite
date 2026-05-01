@@ -1,0 +1,5 @@
+minikube start
+minikube tunnel
+kubectl port-forward svc/server 8000:8000
+kubectl get svc
+kubectl service client
